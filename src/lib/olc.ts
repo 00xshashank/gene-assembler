@@ -7,18 +7,16 @@ import type {
   AssemblyResult
 } from '../types';
 
-// Simple hash function to replace crypto dependency
 function simpleHash(str: string): number {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
         const char = str.charCodeAt(i);
         hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // Convert to 32-bit integer
+        hash = hash & hash;
     }
     return Math.abs(hash);
 }
 
-// Utility function to generate permutations
 function permutations<T>(arr: T[]): T[][] {
     if (arr.length <= 1) return [arr];
     
@@ -35,7 +33,6 @@ function permutations<T>(arr: T[]): T[][] {
     return result;
 }
 
-// Utility function for Counter-like behavior
 class Counter {
     private counts: Map<string, number> = new Map();
     
@@ -50,11 +47,8 @@ class Counter {
     }
 }
 
-// Load reads from file or list
 function loadReads(inputData: string | string[]): Reads {
     if (typeof inputData === 'string') {
-        // Note: In a real implementation, you'd need to handle file reading
-        // For now, we'll assume the string contains the file content
         const reads: Reads = {};
         const lines = inputData.split('\n');
         let header: string | null = null;
@@ -86,7 +80,6 @@ function loadReads(inputData: string | string[]): Reads {
     }
 }
 
-// Overlap implementations
 function overlapKmer(reads: Reads, k: number = 15): Overlaps {
     const index: Map<string, [string, number][]> = new Map();
     
@@ -173,7 +166,6 @@ function smithWaterman(a: string, b: string, match: number = 2, mismatch: number
         }
     }
     
-    // Compute local alignment length
     let [i, j] = maxPos;
     let length = 0;
     
@@ -222,7 +214,6 @@ function nwGlobal(a: string, b: string, match: number = 1, mismatch: number = -1
     const m = b.length;
     const H: number[][] = Array(n + 1).fill(null).map(() => Array(m + 1).fill(0));
     
-    // Initialize first row and column
     for (let i = 1; i <= n; i++) {
         H[i][0] = H[i - 1][0] + gap;
     }
@@ -230,7 +221,6 @@ function nwGlobal(a: string, b: string, match: number = 1, mismatch: number = -1
         H[0][j] = H[0][j - 1] + gap;
     }
     
-    // Fill the matrix
     for (let i = 1; i <= n; i++) {
         for (let j = 1; j <= m; j++) {
             const diag = H[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? match : mismatch);
@@ -269,19 +259,16 @@ function layoutGreedy(reads: Reads, overlaps: Overlaps, overlapThreshold: number
         }
     }
     
-    // Sort by score descending
     edges.sort((a, b) => b[2] - a[2]);
     
     const used = new Set<string>();
     const order: string[] = [];
     
-    // Start with the first read
     if (edges.length > 0) {
         order.push(edges[0][0]);
         used.add(edges[0][0]);
     }
     
-    // Greedy assembly
     while (order.length < Object.keys(reads).length) {
         let bestNext: string | null = null;
         let bestScore = 0;
@@ -299,7 +286,6 @@ function layoutGreedy(reads: Reads, overlaps: Overlaps, overlapThreshold: number
             order.push(bestNext);
             used.add(bestNext);
         } else {
-            // Add any unused read
             for (const rid of Object.keys(reads)) {
                 if (!used.has(rid)) {
                     order.push(rid);
@@ -314,12 +300,10 @@ function layoutGreedy(reads: Reads, overlaps: Overlaps, overlapThreshold: number
 }
 
 function layoutSuperstring(reads: Reads, overlaps: Overlaps, minOverlap: number = 5): string[] {
-    // Find the shortest superstring by trying all permutations
     const ids = Object.keys(reads);
     let bestOrder: string[] = [];
     let bestLen = Infinity;
     
-    // Try all permutations (for small datasets)
     if (ids.length <= 8) {
         const perms = permutations(ids);
         for (const order of perms) {
@@ -349,16 +333,13 @@ function layoutSuperstring(reads: Reads, overlaps: Overlaps, minOverlap: number 
     return bestOrder || [];
 }
 
-// Consensus implementations
 function consensusMajority(seq: string, reads: Reads, window: number = 50): string {
     const votes: Counter[] = Array(seq.length).fill(null).map(() => new Counter());
     
-    // Seed with initial seq
     for (let i = 0; i < seq.length; i++) {
         votes[i].increment(seq[i]);
     }
     
-    // For each read, find its first occurrence in seq
     for (const read of Object.values(reads)) {
         const pos = seq.indexOf(read);
         if (pos >= 0) {
@@ -370,7 +351,6 @@ function consensusMajority(seq: string, reads: Reads, window: number = 50): stri
         }
     }
     
-    // Build consensus
     const cons = votes.map(cnt => {
         const mostCommon = cnt.mostCommon(1);
         return mostCommon.length > 0 ? mostCommon[0][0] : 'N';
@@ -380,14 +360,12 @@ function consensusMajority(seq: string, reads: Reads, window: number = 50): stri
 }
 
 function consensusPoa(order: string[], reads: Reads): string {
-    // Very basic progressive consensus: global align reads to growing consensus
     let cons = reads[order[0]];
     
     for (let i = 1; i < order.length; i++) {
         const rid = order[i];
         const rseq = reads[rid];
         
-        // Simple alignment - find longest common substring
         let bestMatch = '';
         let bestPos = 0;
         
@@ -406,7 +384,6 @@ function consensusPoa(order: string[], reads: Reads): string {
             }
         }
         
-        // Simple merge strategy
         if (bestMatch.length > 5) {
             cons = cons.substring(0, bestPos) + bestMatch + rseq.substring(bestMatch.length);
         } else {
@@ -501,12 +478,10 @@ function runOlc(
         }
     }
     
-    // Primary path
     const primary = order;
     const assembled = assemble(primary);
     const results = [assembled];
     
-    // If alternatives requested, swap each branch in turn to create alternate paths
     if (detectAlts && branches.length > 0) {
         for (const [i, j] of branches) {
             const altOrder = [...primary];

@@ -24,7 +24,6 @@ const Sequence3DViewer: React.FC<Sequence3DViewerProps> = ({ sequence, focusedPo
     return [Math.cos(angle) * 2, Math.sin(angle) * 2, i * 0.5]
   })
 
-  // Focus camera on specific position when provided
   useEffect(() => {
     if (focusedPosition !== null && focusedPosition !== undefined && controlsRef.current && positions[focusedPosition]) {
       const targetPosition = positions[focusedPosition]
