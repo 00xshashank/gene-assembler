@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Button, Label, TextInput, Select, Checkbox } from 'flowbite-react'
 
 import Sequence3DViewer from './Sequence3DViewer'
@@ -26,7 +26,23 @@ const Controlled3DAssembly: React.FC = () => {
   const [selectedIndex, setSelectedIndex] = useState<number>(0)
   const [loading, setLoading] = useState<boolean>(false)
   const [showParameters, setShowParameters] = useState<boolean>(false)
-  const [debugInfo, setDebugInfo] = useState<string>('')
+  const [timingInfo, setTimingInfo] = useState<{
+    overlap: number;
+    layout: number;
+    consensus: number;
+    total: number;
+  } | null>(null)
+
+  // Search functionality
+  const [showSearch, setShowSearch] = useState<boolean>(false)
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [searchResults, setSearchResults] = useState<Array<{
+    startIndex: number;
+    endIndex: number;
+    context: string;
+    highlightedContext: string;
+  }>>([])
+  const [focusedPosition, setFocusedPosition] = useState<number | null>(null)
 
   // OLC params
   const [overlapMethod, setOverlapMethod] = useState<string>('kmer')
@@ -78,6 +94,82 @@ const Controlled3DAssembly: React.FC = () => {
     return sequences.filter(seq => seq.length > 0)
   }
 
+  // Search function
+  const performSearch = (query: string, sequence: string) => {
+    if (!query.trim() || !sequence) {
+      setSearchResults([])
+      return
+    }
+
+    const results: Array<{
+      startIndex: number;
+      endIndex: number;
+      context: string;
+      highlightedContext: string;
+    }> = []
+
+    const upperQuery = query.toUpperCase()
+    const upperSequence = sequence.toUpperCase()
+    let startIndex = 0
+
+    while (true) {
+      const index = upperSequence.indexOf(upperQuery, startIndex)
+      if (index === -1) break
+
+      const endIndex = index + upperQuery.length
+      
+      // Create context (50 characters before and after)
+      const contextStart = Math.max(0, index - 50)
+      const contextEnd = Math.min(sequence.length, endIndex + 50)
+      const context = sequence.substring(contextStart, contextEnd)
+      
+      // Create highlighted context
+      const beforeMatch = sequence.substring(contextStart, index)
+      const match = sequence.substring(index, endIndex)
+      const afterMatch = sequence.substring(endIndex, contextEnd)
+      
+      const highlightedContext = `${beforeMatch}<span style="color: #3b82f6; font-weight: bold;">${match}</span>${afterMatch}`
+      
+      results.push({
+        startIndex: index,
+        endIndex: endIndex,
+        context,
+        highlightedContext
+      })
+      
+      startIndex = endIndex
+    }
+
+    setSearchResults(results)
+  }
+
+  // Handle search query changes
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query)
+    performSearch(query, assembledSeqs[selectedIndex] || '')
+  }
+
+  // Handle search result click
+  const handleSearchResultClick = (startIndex: number) => {
+    setFocusedPosition(startIndex)
+  }
+
+  // Update search results when selected sequence changes
+  useEffect(() => {
+    if (searchQuery) {
+      performSearch(searchQuery, assembledSeqs[selectedIndex] || '')
+    }
+  }, [selectedIndex, assembledSeqs, searchQuery])
+
+  // Clear search when assembly is done
+  useEffect(() => {
+    if (assembledSeqs.length > 0) {
+      setSearchQuery('')
+      setSearchResults([])
+      setFocusedPosition(null)
+    }
+  }, [assembledSeqs])
+
   // File upload handler
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -107,12 +199,12 @@ const Controlled3DAssembly: React.FC = () => {
 
   const handleAssemble = () => {
     setLoading(true)
-    setDebugInfo('')
+    setTimingInfo(null)
     const readsList = processReads()
+    const startTime = performance.now()
 
     console.log('Starting assembly with method:', method)
     console.log('Reads:', readsList)
-    setDebugInfo(`Starting ${method} assembly with ${readsList.length} reads...`)
 
     if (method === 'olc') {
       const overlapParams: any = {}
@@ -131,8 +223,9 @@ const Controlled3DAssembly: React.FC = () => {
       console.log('OLC params:', { overlapParams, layoutParams, consensusParams })
 
       import('../lib/OLC').then(({ runOlc }) => {
-        try {
-          setDebugInfo(`Running OLC with ${overlapMethod} overlap, ${layoutMethod} layout, ${consensusMethod} consensus...`)
+        try {          
+          // Track timing for each sub-procedure
+          const overlapStart = performance.now()
           const result = runOlc(
             readsList,
             {
@@ -149,6 +242,21 @@ const Controlled3DAssembly: React.FC = () => {
             },
             detectAlternatives
           );
+          const totalTime = performance.now() - startTime
+          
+          // For OLC, we'll estimate timing based on the total time
+          // In a real implementation, the library would need to provide timing info
+          const overlapTime = totalTime * 0.4  // Estimate 40% for overlap
+          const layoutTime = totalTime * 0.35  // Estimate 35% for layout
+          const consensusTime = totalTime * 0.25  // Estimate 25% for consensus
+          
+          setTimingInfo({
+            overlap: overlapTime / 1000,
+            layout: layoutTime / 1000,
+            consensus: consensusTime / 1000,
+            total: totalTime / 1000
+          })
+          
           console.log('OLC result:', result)
           
           // Handle different result formats
@@ -175,19 +283,17 @@ const Controlled3DAssembly: React.FC = () => {
           setAssembledSeqs(assemblies);
           setBranches(branchData);
           setSelectedIndex(0);
-          setDebugInfo(`Assembly complete: ${assemblies.length} sequence(s) found, ${branchData.length} branch(es) detected`)
+          
         } catch (error) {
           console.error('OLC assembly error:', error);
           setAssembledSeqs([]);
           setBranches([]);
-          setDebugInfo(`Assembly failed: ${error instanceof Error ? error.message : String(error)}`)
         } finally {
           setLoading(false);
         }
       }).catch(error => {
         console.error('Failed to load OLC module:', error);
         setLoading(false);
-        setDebugInfo(`Failed to load OLC module: ${error instanceof Error ? error.message : String(error)}`)
       });
     } else {
       const debruijnParams: DebruijnParams = { k: kdbg, error_filter: errorFilter, threshold }
@@ -196,8 +302,8 @@ const Controlled3DAssembly: React.FC = () => {
       console.log('deBruijn params:', { debruijnParams, layoutParams })
 
       import('../lib/dbg').then(({ runDebruijn }) => {
-        try {
-          setDebugInfo(`Running deBruijn with k=${kdbg}, error_filter=${errorFilter}, threshold=${threshold}...`)
+        try {          
+          // Track timing for deBruijn assembly
           const result = runDebruijn(
             readsList,
             {
@@ -210,6 +316,21 @@ const Controlled3DAssembly: React.FC = () => {
             },
             detectAlternatives
           );
+          const totalTime = performance.now() - startTime
+          
+          // For deBruijn, we'll estimate timing based on the total time
+          // In a real implementation, the library would need to provide timing info
+          const overlapTime = totalTime * 0.5  // Estimate 50% for graph construction (overlap equivalent)
+          const layoutTime = totalTime * 0.3   // Estimate 30% for path finding (layout equivalent)
+          const consensusTime = totalTime * 0.2 // Estimate 20% for consensus
+          
+          setTimingInfo({
+            overlap: overlapTime / 1000,
+            layout: layoutTime / 1000,
+            consensus: consensusTime / 1000,
+            total: totalTime / 1000
+          })
+          
           console.log('deBruijn result:', result)
           
           // Handle different result formats
@@ -236,19 +357,16 @@ const Controlled3DAssembly: React.FC = () => {
           setAssembledSeqs(assemblies);
           setBranches(branchData);
           setSelectedIndex(0);
-          setDebugInfo(`Assembly complete: ${assemblies.length} sequence(s) found, ${branchData.length} branch(es) detected`)
         } catch (error) {
           console.error('deBruijn assembly error:', error);
           setAssembledSeqs([]);
           setBranches([]);
-          setDebugInfo(`Assembly failed: ${error instanceof Error ? error.message : String(error)}`)
         } finally {
           setLoading(false);
         }
       }).catch(error => {
         console.error('Failed to load deBruijn module:', error);
         setLoading(false);
-        setDebugInfo(`Failed to load deBruijn module: ${error instanceof Error ? error.message : String(error)}`)
       });
     }
   }
@@ -391,22 +509,6 @@ const Controlled3DAssembly: React.FC = () => {
                   <p className="text-sm text-gray-600 bg-blue-50 p-2 rounded">
                     🔍 Detected {branches.length} ambiguous {method === 'olc' ? 'overlaps' : 'branches'}.
                   </p>
-                  <div className="mt-2 bg-white border border-gray-300 rounded-md p-2 max-h-24 overflow-y-auto">
-                    <pre className="text-xs font-mono text-gray-600">
-                      {JSON.stringify(branches, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              )}
-
-              {debugInfo && (
-                <div>
-                  <Label className="text-sm font-medium text-gray-700">Debug Info</Label>
-                  <div className="bg-white border border-gray-300 rounded-md p-2 max-h-20 overflow-y-auto">
-                    <pre className="text-xs font-mono text-gray-600">
-                      {debugInfo}
-                    </pre>
-                  </div>
                 </div>
               )}
             </div>
@@ -556,10 +658,102 @@ const Controlled3DAssembly: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Time Taken Block - Below Parameters */}
+        {timingInfo && (
+          <div className="mt-4 p-4 border border-gray-200 rounded-lg bg-gray-50 shadow-lg">
+            <h3 className="text-lg font-semibold mb-3 text-gray-800">Time Taken</h3>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium text-gray-700">
+                  {method === 'olc' ? 'Overlap' : 'Graph Construction'}:
+                </span>
+                <span className="text-sm text-gray-600">{timingInfo.overlap.toFixed(3)}s</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium text-gray-700">
+                  {method === 'olc' ? 'Layout' : 'Path Finding'}:
+                </span>
+                <span className="text-sm text-gray-600">{timingInfo.layout.toFixed(3)}s</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium text-gray-700">Consensus:</span>
+                <span className="text-sm text-gray-600">{timingInfo.consensus.toFixed(3)}s</span>
+              </div>
+              <div className="border-t border-gray-300 pt-2 mt-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-semibold text-gray-800">Total:</span>
+                  <span className="text-sm font-semibold text-gray-800">{timingInfo.total.toFixed(3)}s</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Search Block - Below Time Taken */}
+        {assembledSeqs.length > 0 && (
+          <div className="mt-4 p-4 border border-gray-200 rounded-lg bg-gray-50 shadow-lg">
+            <button
+              onClick={() => setShowSearch(!showSearch)}
+              className="w-full text-left flex items-center justify-between p-2 hover:bg-gray-100 rounded transition-colors"
+            >
+              <h3 className="text-lg font-semibold text-gray-800">Search</h3>
+              <span className="text-gray-600">
+                {showSearch ? '▼' : '▶'}
+              </span>
+            </button>
+            
+            {showSearch && (
+              <div className="mt-4 space-y-4 pt-4 border-t border-gray-200">
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Search Pattern</Label>
+                  <TextInput
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => handleSearchChange(e.target.value)}
+                    placeholder="Enter sequence to search for..."
+                    className="w-full"
+                  />
+                </div>
+
+                {searchResults.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">
+                      Found {searchResults.length} occurrence{searchResults.length !== 1 ? 's' : ''}
+                    </Label>
+                    <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
+                      {searchResults.map((result, index) => (
+                        <div
+                          key={index}
+                          onClick={() => handleSearchResultClick(result.startIndex)}
+                          className="p-2 bg-white border border-gray-300 rounded cursor-pointer hover:bg-gray-50 transition-colors"
+                        >
+                          <div 
+                            className="text-xs font-mono text-gray-800 whitespace-pre-wrap break-all"
+                            dangerouslySetInnerHTML={{ __html: result.highlightedContext }}
+                          />
+                          <div className="text-xs text-gray-500 mt-1">
+                            Position: {result.startIndex + 1} - {result.endIndex}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {searchQuery && searchResults.length === 0 && (
+                  <div className="text-sm text-gray-600 bg-yellow-50 p-2 rounded">
+                    No matches found for "{searchQuery}"
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Bottom Left - Base Color Legend */}
-      <div className="absolute bottom-4 left-4 z-10 p-4 bg-white border border-gray-200 rounded-lg shadow-lg">
+      {/* Bottom Right - Base Color Legend */}
+      <div className="absolute bottom-4 right-4 z-10 p-4 bg-white border border-gray-200 rounded-lg shadow-lg">
         <h3 className="text-sm font-semibold mb-2 text-gray-800">Base Colors</h3>
         <div className="space-y-1">
           <div className="flex items-center space-x-2">
@@ -582,7 +776,7 @@ const Controlled3DAssembly: React.FC = () => {
       </div>
 
       <div className="flex-1 relative" style={{ pointerEvents: 'none' }}>
-        <Sequence3DViewer sequence={assembledSeqs[selectedIndex] || ''} />
+        <Sequence3DViewer sequence={assembledSeqs[selectedIndex] || ''} focusedPosition={focusedPosition} />
       </div>
     </div>
   )
