@@ -199,7 +199,7 @@ function overlapSw(reads: Reads, match: number = 2, mismatch: number = -1, gap: 
     
     for (let i = 0; i < ids.length; i++) {
         for (let j = i + 1; j < ids.length; j++) {
-            const [score, length] = smithWaterman(reads[ids[i]], reads[ids[j]], match, mismatch, gap);
+            const [, length] = smithWaterman(reads[ids[i]], reads[ids[j]], match, mismatch, gap);
             if (length > 5) {
                 overlaps[`${ids[i]},${ids[j]}`] = length;
             }
@@ -311,7 +311,7 @@ function layoutSuperstring(reads: Reads, overlaps: Overlaps, minOverlap: number 
             let ok = true;
             
             for (let i = 1; i < order.length; i++) {
-                const prev = reads[order[i - 1]];
+                // const prev = reads[order[i - 1]];
                 const curr = reads[order[i]];
                 const ov = overlaps[`${order[i - 1]},${order[i]}`] || overlaps[`${order[i]},${order[i - 1]}`] || 0;
                 
@@ -333,7 +333,7 @@ function layoutSuperstring(reads: Reads, overlaps: Overlaps, minOverlap: number 
     return bestOrder || [];
 }
 
-function consensusMajority(seq: string, reads: Reads, window: number = 50): string {
+function consensusMajority(seq: string, reads: Reads): string {
     const votes: Counter[] = Array(seq.length).fill(null).map(() => new Counter());
     
     for (let i = 0; i < seq.length; i++) {
@@ -466,11 +466,11 @@ function runOlc(
         }
         
         const cm = consensusCfg.method;
-        const cp = consensusCfg.params || {};
+        // const cp = consensusCfg.params || {};
         
         switch (cm) {
             case 'majority':
-                return consensusMajority(seq, reads, cp.window || 50);
+                return consensusMajority(seq, reads);
             case 'poa':
                 return consensusPoa(pathEdges, reads);
             default:

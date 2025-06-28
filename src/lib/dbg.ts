@@ -1,10 +1,9 @@
 import type {
   Reads,
   DebruijnGraph,
-  DebruijnResult,
-  BloomFilter,
   DebruijnParams,
-  DebruijnLayoutParams
+  DebruijnLayoutParams,
+  BloomFilter
 } from '../types';
 
 function simpleHash(str: string): number {
@@ -158,50 +157,6 @@ function simplifyTips(graph: DebruijnGraph, indegree: Counter, outdegree: Counte
   }
 }
 
-function popBubbles(graph: DebruijnGraph): void {
-  // Stub for bubble popping - would need more complex implementation
-  return;
-}
-
-function compressPaths(graph: DebruijnGraph): Record<string, string> {
-  const compressed: Record<string, string> = {};
-  const visited = new Set<string>();
-
-  for (const node of Object.keys(graph)) {
-    if (visited.has(node)) {
-      continue;
-    }
-
-    const path: string[] = [node];
-    let curr = node;
-
-    while (graph[curr] && graph[curr].length === 1) {
-      const next = graph[curr][0];
-      let incomingCount = 0;
-      
-      for (const neighbors of Object.values(graph)) {
-        if (neighbors.includes(curr)) {
-          incomingCount++;
-        }
-      }
-
-      if (incomingCount === 1) {
-        path.push(next);
-        visited.add(curr);
-        curr = next;
-      } else {
-        break;
-      }
-    }
-
-    if (path.length > 1) {
-      compressed[path[0]] = path[path.length - 1];
-    }
-  }
-
-  return compressed;
-}
-
 function findEulerianPath(
   graph: DebruijnGraph, 
   indegree: Counter, 
@@ -271,7 +226,7 @@ function findEulerianPath(
   }
 }
 
-function pathToSequence(path: string[], k: number): string {
+function pathToSequence(path: string[]): string {
   if (path.length === 0) return '';
   
   let seq = path[0];
@@ -281,7 +236,6 @@ function pathToSequence(path: string[], k: number): string {
   return seq;
 }
 
-// -------------------- Main deBruijn assembly function --------------------
 export function runDebruijn(
   readsInput: string | string[],
   overlapCfg: { method: 'debruijn'; params: DebruijnParams },
@@ -319,7 +273,6 @@ export function runDebruijn(
   const [graph, indeg, outdeg] = buildDebruijnGraph(goodKmers);
   
   simplifyTips(graph, indeg, outdeg);
-  popBubbles(graph);
 
   // Detect ambiguous branches
   const branchNodes: string[] = [];
@@ -331,7 +284,7 @@ export function runDebruijn(
 
   function assembleGraph(g: DebruijnGraph): string {
     const path = findEulerianPath(g, indeg, outdeg, eulerMethod);
-    return pathToSequence(path, k);
+    return pathToSequence(path);
   }
 
   const primary = assembleGraph(graph);
