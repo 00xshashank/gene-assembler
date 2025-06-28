@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react'
 import * as THREE from 'three'
-import type { BaseProps } from '../types/index'
+import type { BaseProps } from './types.ts'
 
 const Base3D: React.FC<BaseProps> = ({ position, color, nextPos }) => {
   const mesh = useRef<THREE.Mesh>(null!)

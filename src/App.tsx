@@ -1,11 +1,11 @@
 import './App.css'
-import Controlled3DAssembly from './components/OlcUI'
+import FinalUI from './OlcUI'
 
 function App() {
 
   return (
     <>
-      <Controlled3DAssembly />
+      <FinalUI />
     </>
   )
 }

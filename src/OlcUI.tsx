@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Button, Label, TextInput, Select, Checkbox } from 'flowbite-react'
 
-import Sequence3DViewer from './Sequence3DViewer'
+import Sequence3DViewer from './Sequence3DViewer.tsx'
 import {
   type DebruijnParams
-} from '../types/index'
+} from './types'
 
-const Controlled3DAssembly: React.FC = () => {
+const FinalUI: React.FC = () => {
   // Common
   const [inputMethod, setInputMethod] = useState<'paste' | 'file'>('paste')
   const [reads, setReads] = useState<string>('ACTGAC\nTGACGT\nACGTGA')
@@ -215,7 +215,7 @@ const Controlled3DAssembly: React.FC = () => {
 
       console.log('OLC params:', { overlapParams, layoutParams, consensusParams })
 
-      import('@src/lib/OLC.ts').then(({ runOlc }) => {
+      import('./OLC.ts').then(({ runOlc }) => {
         try {
           const result = runOlc(
             readsList,
@@ -292,7 +292,7 @@ const Controlled3DAssembly: React.FC = () => {
       
       console.log('deBruijn params:', { debruijnParams, layoutParams })
 
-      import('@src/lib/dbg.ts').then(({ runDebruijn }) => {
+      import('./dbg.ts').then(({ runDebruijn }) => {
         try {          
           // Track timing for deBruijn assembly
           const result = runDebruijn(
@@ -773,4 +773,4 @@ const Controlled3DAssembly: React.FC = () => {
   )
 }
 
-export default Controlled3DAssembly
+export default FinalUI;

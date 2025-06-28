@@ -1,8 +1,8 @@
 import { Canvas } from "@react-three/fiber"
 import { OrbitControls } from '@react-three/drei'
 import { useEffect, useRef } from 'react'
-import type { BaseColorMap } from "../types"
-import Base3D from "./Base3D"
+import type { BaseColorMap } from "./types.ts"
+import Base3D from "./Base3D.tsx"
 
 interface Sequence3DViewerProps {
   sequence: string

@@ -5,7 +5,7 @@ import type {
   LayoutConfig,
   ConsensusConfig,
   AssemblyResult
-} from '../types';
+} from './types';
 
 function simpleHash(str: string): number {
     let hash = 0;
