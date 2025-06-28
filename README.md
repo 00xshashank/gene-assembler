@@ -1,4 +1,4 @@
-# Gene Assembly Visualizer
+# Gene Sequence Assembler
 
 A modern web application for visualizing and comparing DNA sequence assembly algorithms with interactive 3D visualization.
 
