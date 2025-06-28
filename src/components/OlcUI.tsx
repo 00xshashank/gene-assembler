@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { Button, Label, TextInput, Select, Checkbox } from 'flowbite-react'
 
 import Sequence3DViewer from './Sequence3DViewer'
@@ -15,7 +15,10 @@ import {
 
 const Controlled3DAssembly: React.FC = () => {
   // Common
-  const [reads, setReads] = useState<string>('ACTGAC,TGACGT,ACGTGA')
+  const [inputMethod, setInputMethod] = useState<'paste' | 'file'>('paste')
+  const [reads, setReads] = useState<string>('ACTGAC\nTGACGT\nACGTGA')
+  const [fileName, setFileName] = useState<string>('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [method, setMethod] = useState<'olc' | 'debruijn'>('olc')
   const [detectAlternatives, setDetectAlternatives] = useState<boolean>(false)
   const [assembledSeqs, setAssembledSeqs] = useState<string[]>([])
@@ -23,6 +26,7 @@ const Controlled3DAssembly: React.FC = () => {
   const [selectedIndex, setSelectedIndex] = useState<number>(0)
   const [loading, setLoading] = useState<boolean>(false)
   const [showParameters, setShowParameters] = useState<boolean>(false)
+  const [debugInfo, setDebugInfo] = useState<string>('')
 
   // OLC params
   const [overlapMethod, setOverlapMethod] = useState<string>('kmer')
@@ -46,12 +50,69 @@ const Controlled3DAssembly: React.FC = () => {
   const [threshold, setThreshold] = useState<number>(2)
   const [eulerMethod, setEulerMethod] = useState<'hierholzer' | 'recursive'>('hierholzer')
 
+  // FASTA parsing function
+  const parseFasta = (content: string): string[] => {
+    const lines = content.split('\n')
+    const sequences: string[] = []
+    let currentSequence = ''
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim()
+      if (trimmedLine.startsWith('>')) {
+        // Header line - save previous sequence if exists
+        if (currentSequence) {
+          sequences.push(currentSequence)
+        }
+        currentSequence = ''
+      } else if (trimmedLine && !trimmedLine.startsWith(';')) {
+        // Sequence line (ignore comment lines starting with ;)
+        currentSequence += trimmedLine.toUpperCase()
+      }
+    }
+    
+    // Add the last sequence
+    if (currentSequence) {
+      sequences.push(currentSequence)
+    }
+    
+    return sequences.filter(seq => seq.length > 0)
+  }
+
+  // File upload handler
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    
+    setFileName(file.name)
+    
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const content = e.target?.result as string
+      const sequences = parseFasta(content)
+      setReads(sequences.join('\n'))
+    }
+    reader.readAsText(file)
+  }
+
+  // Process reads from either input method
+  const processReads = (): string[] => {
+    if (inputMethod === 'file') {
+      // For file input, reads are already parsed as sequences
+      return reads.split('\n').filter(r => r.trim().length > 0)
+    } else {
+      // For paste input, split by newlines and filter empty lines
+      return reads.split('\n').map(r => r.trim()).filter(r => r.length > 0)
+    }
+  }
+
   const handleAssemble = () => {
     setLoading(true)
-    const readsList = reads.split(',').map(r => r.trim())
+    setDebugInfo('')
+    const readsList = processReads()
 
     console.log('Starting assembly with method:', method)
     console.log('Reads:', readsList)
+    setDebugInfo(`Starting ${method} assembly with ${readsList.length} reads...`)
 
     if (method === 'olc') {
       const overlapParams: any = {}
@@ -71,6 +132,7 @@ const Controlled3DAssembly: React.FC = () => {
 
       import('../lib/OLC').then(({ runOlc }) => {
         try {
+          setDebugInfo(`Running OLC with ${overlapMethod} overlap, ${layoutMethod} layout, ${consensusMethod} consensus...`)
           const result = runOlc(
             readsList,
             {
@@ -88,14 +150,44 @@ const Controlled3DAssembly: React.FC = () => {
             detectAlternatives
           );
           console.log('OLC result:', result)
-          setAssembledSeqs(result.assemblies || []);
-          setBranches(result.branches || []);
+          
+          // Handle different result formats
+          let assemblies: string[] = []
+          let branchData: any[] = []
+          
+          if (result && typeof result === 'object') {
+            if (Array.isArray(result)) {
+              assemblies = result
+            } else if (result.assemblies) {
+              assemblies = Array.isArray(result.assemblies) ? result.assemblies : [result.assemblies]
+            } else if (typeof result === 'string') {
+              assemblies = [result]
+            }
+            
+            if (result.branches) {
+              branchData = Array.isArray(result.branches) ? result.branches : [result.branches]
+            }
+          }
+          
+          console.log('Processed assemblies:', assemblies)
+          console.log('Processed branches:', branchData)
+          
+          setAssembledSeqs(assemblies);
+          setBranches(branchData);
           setSelectedIndex(0);
+          setDebugInfo(`Assembly complete: ${assemblies.length} sequence(s) found, ${branchData.length} branch(es) detected`)
         } catch (error) {
           console.error('OLC assembly error:', error);
+          setAssembledSeqs([]);
+          setBranches([]);
+          setDebugInfo(`Assembly failed: ${error instanceof Error ? error.message : String(error)}`)
         } finally {
           setLoading(false);
         }
+      }).catch(error => {
+        console.error('Failed to load OLC module:', error);
+        setLoading(false);
+        setDebugInfo(`Failed to load OLC module: ${error instanceof Error ? error.message : String(error)}`)
       });
     } else {
       const debruijnParams: DebruijnParams = { k: kdbg, error_filter: errorFilter, threshold }
@@ -105,6 +197,7 @@ const Controlled3DAssembly: React.FC = () => {
 
       import('../lib/dbg').then(({ runDebruijn }) => {
         try {
+          setDebugInfo(`Running deBruijn with k=${kdbg}, error_filter=${errorFilter}, threshold=${threshold}...`)
           const result = runDebruijn(
             readsList,
             {
@@ -118,14 +211,44 @@ const Controlled3DAssembly: React.FC = () => {
             detectAlternatives
           );
           console.log('deBruijn result:', result)
-          setAssembledSeqs(result.assemblies || []);
-          setBranches(result.branches || []);
+          
+          // Handle different result formats
+          let assemblies: string[] = []
+          let branchData: any[] = []
+          
+          if (result && typeof result === 'object') {
+            if (Array.isArray(result)) {
+              assemblies = result
+            } else if (result.assemblies) {
+              assemblies = Array.isArray(result.assemblies) ? result.assemblies : [result.assemblies]
+            } else if (typeof result === 'string') {
+              assemblies = [result]
+            }
+            
+            if (result.branches) {
+              branchData = Array.isArray(result.branches) ? result.branches : [result.branches]
+            }
+          }
+          
+          console.log('Processed assemblies:', assemblies)
+          console.log('Processed branches:', branchData)
+          
+          setAssembledSeqs(assemblies);
+          setBranches(branchData);
           setSelectedIndex(0);
+          setDebugInfo(`Assembly complete: ${assemblies.length} sequence(s) found, ${branchData.length} branch(es) detected`)
         } catch (error) {
           console.error('deBruijn assembly error:', error);
+          setAssembledSeqs([]);
+          setBranches([]);
+          setDebugInfo(`Assembly failed: ${error instanceof Error ? error.message : String(error)}`)
         } finally {
           setLoading(false);
         }
+      }).catch(error => {
+        console.error('Failed to load deBruijn module:', error);
+        setLoading(false);
+        setDebugInfo(`Failed to load deBruijn module: ${error instanceof Error ? error.message : String(error)}`)
       });
     }
   }
@@ -148,9 +271,49 @@ const Controlled3DAssembly: React.FC = () => {
           <h3 className="text-lg font-semibold mb-3 text-gray-800">Input</h3>
           <div className="space-y-4">
             <div>
-              <Label className="text-sm font-medium text-gray-700">Reads (comma-separated)</Label>
-              <TextInput value={reads} onChange={e => setReads(e.target.value)} />
+              <Label className="text-sm font-medium text-gray-700">Input Method</Label>
+              <Select value={inputMethod} onChange={e => setInputMethod(e.target.value as 'paste' | 'file')}>
+                <option value="paste">Paste Reads</option>
+                <option value="file">Upload FASTA File</option>
+              </Select>
             </div>
+
+            {inputMethod === 'paste' ? (
+              <div>
+                <Label className="text-sm font-medium text-gray-700">Reads (one per line)</Label>
+                <textarea
+                  value={reads}
+                  onChange={e => setReads(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={6}
+                  placeholder="Enter reads, one per line:&#10;ACTGAC&#10;TGACGT&#10;ACGTGA"
+                />
+              </div>
+            ) : (
+              <div>
+                <Label className="text-sm font-medium text-gray-700">FASTA File</Label>
+                <div className="space-y-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".fasta,.fa,.txt"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <Button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full bg-gray-600 text-white hover:bg-gray-700"
+                  >
+                    Choose File
+                  </Button>
+                  {fileName && (
+                    <p className="text-sm text-gray-600 bg-green-50 p-2 rounded">
+                      ✓ {fileName}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
             
             <div className="flex items-center pt-2">
               <Checkbox checked={detectAlternatives} onChange={() => setDetectAlternatives(!detectAlternatives)} />
@@ -159,7 +322,7 @@ const Controlled3DAssembly: React.FC = () => {
 
             <Button 
               onClick={handleAssemble} 
-              disabled={loading} 
+              disabled={loading || (inputMethod === 'file' && !fileName)} 
               className="w-full bg-black text-white hover:bg-gray-800 border-black"
             >
               {loading ? 'Loading…' : 'Assemble'}
@@ -168,27 +331,83 @@ const Controlled3DAssembly: React.FC = () => {
         </div>
 
         {/* Results Box */}
-        {(assembledSeqs.length > 0 || branches.length > 0) && (
+        {(assembledSeqs.length > 0 || branches.length > 0 || loading) && (
           <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
             <h3 className="text-lg font-semibold mb-3 text-gray-800">Results</h3>
             <div className="space-y-3">
-              {assembledSeqs.length > 1 && (
-                <div>
-                  <Label className="text-sm font-medium text-gray-700">Variant</Label>
-                  <Select value={String(selectedIndex)} onChange={e => setSelectedIndex(+e.target.value)}>
-                    {assembledSeqs.map((_, idx) => (
-                      <option key={idx} value={idx}>
-                        Variant {idx + 1}
-                      </option>
-                    ))}
-                  </Select>
+              {loading && (
+                <p className="text-sm text-gray-600 bg-yellow-50 p-2 rounded">
+                  ⏳ Processing assembly...
+                </p>
+              )}
+              
+              {!loading && assembledSeqs.length === 0 && (
+                <p className="text-sm text-gray-600 bg-red-50 p-2 rounded">
+                  ❌ No assembly results found. Check console for errors.
+                </p>
+              )}
+
+              {assembledSeqs.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium text-gray-700">
+                      Assembled Sequence{assembledSeqs.length > 1 ? 's' : ''} ({assembledSeqs.length})
+                    </Label>
+                    {assembledSeqs.length > 1 && (
+                      <span className="text-xs text-gray-500">
+                        Length: {assembledSeqs[selectedIndex]?.length || 0} bp
+                      </span>
+                    )}
+                  </div>
+                  
+                  {assembledSeqs.length > 1 && (
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Variant</Label>
+                      <Select value={String(selectedIndex)} onChange={e => setSelectedIndex(+e.target.value)}>
+                        {assembledSeqs.map((_, idx) => (
+                          <option key={idx} value={idx}>
+                            Variant {idx + 1} ({assembledSeqs[idx]?.length || 0} bp)
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  )}
+
+                  {assembledSeqs[selectedIndex] && (
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Sequence</Label>
+                      <div className="bg-white border border-gray-300 rounded-md p-2 max-h-32 overflow-y-auto">
+                        <pre className="text-xs font-mono text-gray-800 whitespace-pre-wrap break-all">
+                          {assembledSeqs[selectedIndex]}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {branches.length > 0 && (
-                <p className="text-sm text-gray-600 bg-blue-50 p-2 rounded">
-                  Detected {branches.length} ambiguous {method === 'olc' ? 'overlaps' : 'branches'}.
-                </p>
+                <div>
+                  <p className="text-sm text-gray-600 bg-blue-50 p-2 rounded">
+                    🔍 Detected {branches.length} ambiguous {method === 'olc' ? 'overlaps' : 'branches'}.
+                  </p>
+                  <div className="mt-2 bg-white border border-gray-300 rounded-md p-2 max-h-24 overflow-y-auto">
+                    <pre className="text-xs font-mono text-gray-600">
+                      {JSON.stringify(branches, null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              )}
+
+              {debugInfo && (
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Debug Info</Label>
+                  <div className="bg-white border border-gray-300 rounded-md p-2 max-h-20 overflow-y-auto">
+                    <pre className="text-xs font-mono text-gray-600">
+                      {debugInfo}
+                    </pre>
+                  </div>
+                </div>
               )}
             </div>
           </div>
