@@ -3,13 +3,6 @@ import { Button, Label, TextInput, Select, Checkbox } from 'flowbite-react'
 
 import Sequence3DViewer from './Sequence3DViewer'
 import {
-  type KmerParams,
-  type MinhashParams,
-  type GreedyLayoutParams,
-  type SuperstringLayoutParams,
-  type OverlapParams,
-  type ConsensusParams,
-  type LayoutParams,
   type DebruijnParams
 } from '../types/index'
 
@@ -223,9 +216,7 @@ const Controlled3DAssembly: React.FC = () => {
       console.log('OLC params:', { overlapParams, layoutParams, consensusParams })
 
       import('../lib/OLC').then(({ runOlc }) => {
-        try {          
-          // Track timing for each sub-procedure
-          const overlapStart = performance.now()
+        try {
           const result = runOlc(
             readsList,
             {
