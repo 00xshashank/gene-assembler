@@ -22,6 +22,7 @@ const Controlled3DAssembly: React.FC = () => {
   const [branches, setBranches] = useState<any[]>([])
   const [selectedIndex, setSelectedIndex] = useState<number>(0)
   const [loading, setLoading] = useState<boolean>(false)
+  const [showParameters, setShowParameters] = useState<boolean>(false)
 
   // OLC params
   const [overlapMethod, setOverlapMethod] = useState<string>('kmer')
@@ -49,80 +50,79 @@ const Controlled3DAssembly: React.FC = () => {
     setLoading(true)
     const readsList = reads.split(',').map(r => r.trim())
 
-    const payload: any = { reads_input: readsList, detect_alternatives: detectAlternatives }
+    console.log('Starting assembly with method:', method)
+    console.log('Reads:', readsList)
 
     if (method === 'olc') {
-      const overlapParams: OverlapParams = {}
-      if (overlapMethod === 'kmer') (overlapParams as unknown as KmerParams).k = k
-      if (overlapMethod === 'minhash') (overlapParams as unknown as MinhashParams).num_hashes = numHashes
+      const overlapParams: any = {}
+      if (overlapMethod === 'kmer') overlapParams.k = k
+      if (overlapMethod === 'minhash') overlapParams.numHashes = numHashes
       if (overlapMethod === 'sw') Object.assign(overlapParams, { match: swMatch, mismatch: swMismatch, gap: swGap })
       if (overlapMethod === 'nw') Object.assign(overlapParams, { match: nwMatch, mismatch: nwMismatch, gap: nwGap })
 
-      const layoutParams: LayoutParams = {}
-      if (layoutMethod === 'greedy') (layoutParams as unknown as GreedyLayoutParams).overlap_threshold = overlapThreshold
-      if (layoutMethod === 'superstring') (layoutParams as unknown as SuperstringLayoutParams).min_overlap = minOverlap
+      const layoutParams: any = {}
+      if (layoutMethod === 'greedy') layoutParams.overlapThreshold = overlapThreshold
+      if (layoutMethod === 'superstring') layoutParams.minOverlap = minOverlap
 
-      const consensusParams: ConsensusParams = {}
-      if (consensusMethod === 'majority') (consensusParams as ConsensusParams).window = windowSize
+      const consensusParams: any = {}
+      if (consensusMethod === 'majority') consensusParams.window = windowSize
 
-      payload.overlap = { method: overlapMethod, params: overlapParams }
-      payload.layout = { method: layoutMethod, params: layoutParams }
-      payload.consensus = { method: consensusMethod, params: consensusParams }
-    } else {
-      const debruijnParams: DebruijnParams = { k: kdbg, error_filter: errorFilter, threshold }
-      payload.overlap = { method: 'debruijn', params: debruijnParams }
-      payload.layout = { method: 'debruijn', params: { euler: eulerMethod } }
-      payload.consensus = { method: 'none', params: {} }
-    }
+      console.log('OLC params:', { overlapParams, layoutParams, consensusParams })
 
-    if (method === 'olc') {
       import('../lib/OLC').then(({ runOlc }) => {
         try {
           const result = runOlc(
             readsList,
             {
               method: overlapMethod as "kmer" | "minhash" | "sw" | "nw",
-              params: payload.overlap.params,
+              params: overlapParams,
             },
             {
               method: layoutMethod as "greedy" | "superstring",
-              params: payload.layout.params,
+              params: layoutParams,
             },
             {
               method: consensusMethod as "majority" | "poa",
-              params: payload.consensus.params,
+              params: consensusParams,
             },
             detectAlternatives
           );
+          console.log('OLC result:', result)
           setAssembledSeqs(result.assemblies || []);
           setBranches(result.branches || []);
           setSelectedIndex(0);
         } catch (error) {
-          console.error(error);
+          console.error('OLC assembly error:', error);
         } finally {
           setLoading(false);
         }
       });
     } else {
+      const debruijnParams: DebruijnParams = { k: kdbg, error_filter: errorFilter, threshold }
+      const layoutParams = { euler: eulerMethod }
+      
+      console.log('deBruijn params:', { debruijnParams, layoutParams })
+
       import('../lib/dbg').then(({ runDebruijn }) => {
         try {
           const result = runDebruijn(
             readsList,
             {
               method: 'debruijn',
-              params: payload.overlap.params,
+              params: debruijnParams,
             },
             {
               method: 'debruijn',
-              params: payload.layout.params,
+              params: layoutParams,
             },
             detectAlternatives
           );
+          console.log('deBruijn result:', result)
           setAssembledSeqs(result.assemblies || []);
           setBranches(result.branches || []);
           setSelectedIndex(0);
         } catch (error) {
-          console.error(error);
+          console.error('deBruijn assembly error:', error);
         } finally {
           setLoading(false);
         }
@@ -140,149 +140,226 @@ const Controlled3DAssembly: React.FC = () => {
         linear-gradient(to right, rgba(0,0,0,0.1) 1px, transparent 1px),
         linear-gradient(to bottom, rgba(0,0,0,0.1) 1px, transparent 1px)`,
       backgroundSize: '20px 20px',
+      fontFamily: 'Geist Mono, monospace',
     }}>
-      <div className="w-80 p-4 bg-white shadow-lg space-y-4 overflow-auto">
-        <div>
-          <Label>Assembly Type</Label>
-          <Select value={method} onChange={e => setMethod(e.target.value as any)}>
-            <option value="olc">OLC</option>
-            <option value="debruijn">deBruijn</option>
-          </Select>
-        </div>
-        <div>
-          <Label>Reads (comma-separated)</Label>
-          <TextInput value={reads} onChange={e => setReads(e.target.value)} />
-        </div>
+      {/* Left Sidebar - Reads Input Only */}
+      <div className="w-80 p-4 space-y-4 overflow-auto">
+        <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+          <h3 className="text-lg font-semibold mb-3 text-gray-800">Input</h3>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium text-gray-700">Reads (comma-separated)</Label>
+              <TextInput value={reads} onChange={e => setReads(e.target.value)} />
+            </div>
+            
+            <div className="flex items-center pt-2">
+              <Checkbox checked={detectAlternatives} onChange={() => setDetectAlternatives(!detectAlternatives)} />
+              <Label className="ml-2 text-sm font-medium text-gray-700">Show alternatives</Label>
+            </div>
 
-        {method === 'olc' ? (
-          <>
-            <div>
-              <Label>Overlap Method</Label>
-              <Select value={overlapMethod} onChange={e => setOverlapMethod(e.target.value)}>
-                <option value="kmer">kmer</option>
-                <option value="minhash">minhash</option>
-                <option value="sw">Smith-Waterman</option>
-                <option value="nw">Needleman-Wunsch</option>
-              </Select>
-            </div>
-            {overlapMethod === 'kmer' && (
-              <div>
-                <Label>k</Label>
-                <TextInput type="number" value={k} onChange={e => setK(+e.target.value)} />
-              </div>
-            )}
-            {overlapMethod === 'minhash' && (
-              <div>
-                <Label>Num Hashes</Label>
-                <TextInput type="number" value={numHashes} onChange={e => setNumHashes(+e.target.value)} />
-              </div>
-            )}
-            {overlapMethod === 'sw' && (
-              <div>
-                <Label>SW Match</Label>
-                <TextInput type="number" value={swMatch} onChange={e => setSwMatch(+e.target.value)} />
-                <Label>SW Mismatch</Label>
-                <TextInput type="number" value={swMismatch} onChange={e => setSwMismatch(+e.target.value)} />
-                <Label>SW Gap</Label>
-                <TextInput type="number" value={swGap} onChange={e => setSwGap(+e.target.value)} />
-              </div>
-            )}
-            {overlapMethod === 'nw' && (
-              <div>
-                <Label>NW Match</Label>
-                <TextInput type="number" value={nwMatch} onChange={e => setNwMatch(+e.target.value)} />
-                <Label>NW Mismatch</Label>
-                <TextInput type="number" value={nwMismatch} onChange={e => setNwMismatch(+e.target.value)} />
-                <Label>NW Gap</Label>
-                <TextInput type="number" value={nwGap} onChange={e => setNwGap(+e.target.value)} />
-              </div>
-            )}
-
-            <div>
-              <Label>Layout Method</Label>
-              <Select value={layoutMethod} onChange={e => setLayoutMethod(e.target.value)}>
-                <option value="greedy">greedy</option>
-                <option value="superstring">superstring</option>
-              </Select>
-            </div>
-            {layoutMethod === 'greedy' && (
-              <div>
-                <Label>Overlap Threshold</Label>
-                <TextInput type="number" value={overlapThreshold} onChange={e => setOverlapThreshold(+e.target.value)} />
-              </div>
-            )}
-            {layoutMethod === 'superstring' && (
-              <div>
-                <Label>Min Overlap</Label>
-                <TextInput type="number" value={minOverlap} onChange={e => setMinOverlap(+e.target.value)} />
-              </div>
-            )}
-
-            <div>
-              <Label>Consensus Method</Label>
-              <Select value={consensusMethod} onChange={e => setConsensusMethod(e.target.value)}>
-                <option value="majority">majority</option>
-                <option value="poa">poa</option>
-              </Select>
-            </div>
-            {consensusMethod === 'majority' && (
-              <TextInput type="number" value={windowSize} onChange={e => setWindowSize(+e.target.value)} />
-            )}
-          </>
-        ) : (
-          <>
-            <div>
-              <Label>k-mer Size</Label>
-              <TextInput type="number" value={kdbg} onChange={e => setKdbg(+e.target.value)} />
-            </div>
-            <div>
-              <Label>Error Filter</Label>
-              <Select value={errorFilter} onChange={e => setErrorFilter(e.target.value as any)}>
-                <option value="threshold">threshold</option>
-                <option value="bloom">bloom</option>
-              </Select>
-            </div>
-            <div>
-              <Label>Threshold</Label>
-              <TextInput type="number" value={threshold} onChange={e => setThreshold(+e.target.value)} />
-            </div>
-            <div>
-              <Label>Eulerian Path Method</Label>
-              <Select value={eulerMethod} onChange={e => setEulerMethod(e.target.value as any)}>
-                <option value="hierholzer">hierholzer</option>
-                <option value="recursive">recursive</option>
-              </Select>
-            </div>
-          </>
-        )}
-
-        <div className="flex items-center">
-          <Checkbox checked={detectAlternatives} onChange={() => setDetectAlternatives(!detectAlternatives)} />
-          <Label className="ml-2">Detect alternatives</Label>
+            <Button 
+              onClick={handleAssemble} 
+              disabled={loading} 
+              className="w-full bg-black text-white hover:bg-gray-800 border-black"
+            >
+              {loading ? 'Loading…' : 'Assemble'}
+            </Button>
+          </div>
         </div>
 
-        <Button onClick={handleAssemble} disabled={loading} color="primary">
-          {loading ? 'Loading…' : 'Assemble'}
-        </Button>
+        {/* Results Box */}
+        {(assembledSeqs.length > 0 || branches.length > 0) && (
+          <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <h3 className="text-lg font-semibold mb-3 text-gray-800">Results</h3>
+            <div className="space-y-3">
+              {assembledSeqs.length > 1 && (
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Variant</Label>
+                  <Select value={String(selectedIndex)} onChange={e => setSelectedIndex(+e.target.value)}>
+                    {assembledSeqs.map((_, idx) => (
+                      <option key={idx} value={idx}>
+                        Variant {idx + 1}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
 
-        {assembledSeqs.length > 1 && (
-          <>
-            <Label>Variant</Label>
-            <Select value={String(selectedIndex)} onChange={e => setSelectedIndex(+e.target.value)}>
-              {assembledSeqs.map((_, idx) => (
-                <option key={idx} value={idx}>
-                  Variant {idx + 1}
-                </option>
-              ))}
-            </Select>
-          </>
+              {branches.length > 0 && (
+                <p className="text-sm text-gray-600 bg-blue-50 p-2 rounded">
+                  Detected {branches.length} ambiguous {method === 'olc' ? 'overlaps' : 'branches'}.
+                </p>
+              )}
+            </div>
+          </div>
         )}
+      </div>
 
-        {branches.length > 0 && (
-          <p className="text-sm text-gray-600">
-            Detected {branches.length} ambiguous {method === 'olc' ? 'overlaps' : 'branches'}.
-          </p>
-        )}
+      {/* Top Right - Parameters Accordion */}
+      <div className="absolute top-4 right-4 z-10 w-80">
+        <div className="p-4 border border-gray-200 rounded-lg bg-gray-50 shadow-lg">
+          <button
+            onClick={() => setShowParameters(!showParameters)}
+            className="w-full text-left flex items-center justify-between p-2 hover:bg-gray-100 rounded transition-colors"
+          >
+            <h3 className="text-lg font-semibold text-gray-800">Parameters</h3>
+            <span className="text-gray-600">
+              {showParameters ? '▼' : '▶'}
+            </span>
+          </button>
+          
+          {showParameters && (
+            <div className="mt-4 space-y-4 pt-4 border-t border-gray-200">
+              <div>
+                <Label className="text-sm font-medium text-gray-700">Assembly Type</Label>
+                <Select value={method} onChange={e => setMethod(e.target.value as any)}>
+                  <option value="olc">OLC</option>
+                  <option value="debruijn">deBruijn</option>
+                </Select>
+              </div>
+
+              {method === 'olc' ? (
+                <>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Overlap Method</Label>
+                    <Select value={overlapMethod} onChange={e => setOverlapMethod(e.target.value)}>
+                      <option value="kmer">kmer</option>
+                      <option value="minhash">minhash</option>
+                      <option value="sw">Smith-Waterman</option>
+                      <option value="nw">Needleman-Wunsch</option>
+                    </Select>
+                  </div>
+                  {overlapMethod === 'kmer' && (
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">k</Label>
+                      <TextInput type="number" value={k} onChange={e => setK(+e.target.value)} />
+                    </div>
+                  )}
+                  {overlapMethod === 'minhash' && (
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Num Hashes</Label>
+                      <TextInput type="number" value={numHashes} onChange={e => setNumHashes(+e.target.value)} />
+                    </div>
+                  )}
+                  {overlapMethod === 'sw' && (
+                    <div className="space-y-2">
+                      <div>
+                        <Label className="text-sm font-medium text-gray-700">SW Match</Label>
+                        <TextInput type="number" value={swMatch} onChange={e => setSwMatch(+e.target.value)} />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium text-gray-700">SW Mismatch</Label>
+                        <TextInput type="number" value={swMismatch} onChange={e => setSwMismatch(+e.target.value)} />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium text-gray-700">SW Gap</Label>
+                        <TextInput type="number" value={swGap} onChange={e => setSwGap(+e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                  {overlapMethod === 'nw' && (
+                    <div className="space-y-2">
+                      <div>
+                        <Label className="text-sm font-medium text-gray-700">NW Match</Label>
+                        <TextInput type="number" value={nwMatch} onChange={e => setNwMatch(+e.target.value)} />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium text-gray-700">NW Mismatch</Label>
+                        <TextInput type="number" value={nwMismatch} onChange={e => setNwMismatch(+e.target.value)} />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-medium text-gray-700">NW Gap</Label>
+                        <TextInput type="number" value={nwGap} onChange={e => setNwGap(+e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Layout Method</Label>
+                    <Select value={layoutMethod} onChange={e => setLayoutMethod(e.target.value)}>
+                      <option value="greedy">greedy</option>
+                      <option value="superstring">superstring</option>
+                    </Select>
+                  </div>
+                  {layoutMethod === 'greedy' && (
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Overlap Threshold</Label>
+                      <TextInput type="number" value={overlapThreshold} onChange={e => setOverlapThreshold(+e.target.value)} />
+                    </div>
+                  )}
+                  {layoutMethod === 'superstring' && (
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Min Overlap</Label>
+                      <TextInput type="number" value={minOverlap} onChange={e => setMinOverlap(+e.target.value)} />
+                    </div>
+                  )}
+
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Consensus Method</Label>
+                    <Select value={consensusMethod} onChange={e => setConsensusMethod(e.target.value)}>
+                      <option value="majority">majority</option>
+                      <option value="poa">poa</option>
+                    </Select>
+                  </div>
+                  {consensusMethod === 'majority' && (
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Window Size</Label>
+                      <TextInput type="number" value={windowSize} onChange={e => setWindowSize(+e.target.value)} />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">k-mer Size</Label>
+                    <TextInput type="number" value={kdbg} onChange={e => setKdbg(+e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Error Filter</Label>
+                    <Select value={errorFilter} onChange={e => setErrorFilter(e.target.value as any)}>
+                      <option value="threshold">threshold</option>
+                      <option value="bloom">bloom</option>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Threshold</Label>
+                    <TextInput type="number" value={threshold} onChange={e => setThreshold(+e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Eulerian Path Method</Label>
+                    <Select value={eulerMethod} onChange={e => setEulerMethod(e.target.value as any)}>
+                      <option value="hierholzer">hierholzer</option>
+                      <option value="recursive">recursive</option>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom Left - Base Color Legend */}
+      <div className="absolute bottom-4 left-4 z-10 p-4 bg-white border border-gray-200 rounded-lg shadow-lg">
+        <h3 className="text-sm font-semibold mb-2 text-gray-800">Base Colors</h3>
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2">
+            <div className="w-4 h-4 rounded" style={{ backgroundColor: '#ff0000' }}></div>
+            <span className="text-xs text-gray-700">A (Adenine)</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-4 h-4 rounded" style={{ backgroundColor: '#00ff00' }}></div>
+            <span className="text-xs text-gray-700">C (Cytosine)</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-4 h-4 rounded" style={{ backgroundColor: '#0000ff' }}></div>
+            <span className="text-xs text-gray-700">G (Guanine)</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-4 h-4 rounded" style={{ backgroundColor: '#ffff00' }}></div>
+            <span className="text-xs text-gray-700">T (Thymine)</span>
+          </div>
+        </div>
       </div>
 
       <div className="flex-1 relative" style={{ pointerEvents: 'none' }}>

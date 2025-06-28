@@ -203,12 +203,14 @@ function smithWaterman(a: string, b: string, match: number = 2, mismatch: number
 
 function overlapSw(reads: Reads, match: number = 2, mismatch: number = -1, gap: number = -1): Overlaps {
     const overlaps: Overlaps = {};
-    const keys = Object.keys(reads);
+    const ids = Object.keys(reads);
     
-    for (let i = 0; i < keys.length; i++) {
-        for (let j = i + 1; j < keys.length; j++) {
-            const [, length] = smithWaterman(reads[keys[i]], reads[keys[j]], match, mismatch, gap);
-            overlaps[`${keys[i]},${keys[j]}`] = length;
+    for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+            const [score, length] = smithWaterman(reads[ids[i]], reads[ids[j]], match, mismatch, gap);
+            if (length > 5) {
+                overlaps[`${ids[i]},${ids[j]}`] = length;
+            }
         }
     }
     
@@ -218,99 +220,129 @@ function overlapSw(reads: Reads, match: number = 2, mismatch: number = -1, gap: 
 function nwGlobal(a: string, b: string, match: number = 1, mismatch: number = -1, gap: number = -1): number {
     const n = a.length;
     const m = b.length;
-    const F: number[][] = Array(n + 1).fill(null).map(() => Array(m + 1).fill(0));
+    const H: number[][] = Array(n + 1).fill(null).map(() => Array(m + 1).fill(0));
     
-    for (let i = 1; i <= n; i++) F[i][0] = i * gap;
-    for (let j = 1; j <= m; j++) F[0][j] = j * gap;
+    // Initialize first row and column
+    for (let i = 1; i <= n; i++) {
+        H[i][0] = H[i - 1][0] + gap;
+    }
+    for (let j = 1; j <= m; j++) {
+        H[0][j] = H[0][j - 1] + gap;
+    }
     
+    // Fill the matrix
     for (let i = 1; i <= n; i++) {
         for (let j = 1; j <= m; j++) {
-            const diag = F[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? match : mismatch);
-            const up = F[i - 1][j] + gap;
-            const left = F[i][j - 1] + gap;
-            F[i][j] = Math.max(diag, up, left);
+            const diag = H[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? match : mismatch);
+            const up = H[i - 1][j] + gap;
+            const left = H[i][j - 1] + gap;
+            H[i][j] = Math.max(diag, up, left);
         }
     }
     
-    return F[n][m];
+    return H[n][m];
 }
 
 function overlapNw(reads: Reads, match: number = 1, mismatch: number = -1, gap: number = -1): Overlaps {
     const overlaps: Overlaps = {};
-    const keys = Object.keys(reads);
+    const ids = Object.keys(reads);
     
-    for (let i = 0; i < keys.length; i++) {
-        for (let j = i + 1; j < keys.length; j++) {
-            const length = nwGlobal(reads[keys[i]], reads[keys[j]], match, mismatch, gap);
-            overlaps[`${keys[i]},${keys[j]}`] = length;
+    for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+            const score = nwGlobal(reads[ids[i]], reads[ids[j]], match, mismatch, gap);
+            if (score > 0) {
+                overlaps[`${ids[i]},${ids[j]}`] = score;
+            }
         }
     }
     
     return overlaps;
 }
 
-// Layout implementations
 function layoutGreedy(reads: Reads, overlaps: Overlaps, overlapThreshold: number = 10): string[] {
-    const unused = new Set(Object.keys(reads));
+    const edges: [string, string, number][] = [];
+    
+    for (const [key, score] of Object.entries(overlaps)) {
+        if (score >= overlapThreshold) {
+            const [r1, r2] = key.split(',');
+            edges.push([r1, r2, score]);
+        }
+    }
+    
+    // Sort by score descending
+    edges.sort((a, b) => b[2] - a[2]);
+    
+    const used = new Set<string>();
     const order: string[] = [];
     
-    if (unused.size === 0) return order;
+    // Start with the first read
+    if (edges.length > 0) {
+        order.push(edges[0][0]);
+        used.add(edges[0][0]);
+    }
     
-    let cur = Array.from(unused)[0];
-    unused.delete(cur);
-    order.push(cur);
-    
-    while (unused.size > 0) {
-        let best: string | null = null;
-        let bestScore = overlapThreshold;
+    // Greedy assembly
+    while (order.length < Object.keys(reads).length) {
+        let bestNext: string | null = null;
+        let bestScore = 0;
         
-        for (const r of unused) {
-            const s = overlaps[`${cur},${r}`] || overlaps[`${r},${cur}`] || 0;
-            if (s > bestScore) {
-                best = r;
-                bestScore = s;
+        for (const [r1, r2, score] of edges) {
+            if (order[order.length - 1] === r1 && !used.has(r2)) {
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestNext = r2;
+                }
             }
         }
         
-        if (best) {
-            unused.delete(best);
+        if (bestNext) {
+            order.push(bestNext);
+            used.add(bestNext);
         } else {
-            best = Array.from(unused)[0];
-            unused.delete(best);
+            // Add any unused read
+            for (const rid of Object.keys(reads)) {
+                if (!used.has(rid)) {
+                    order.push(rid);
+                    used.add(rid);
+                    break;
+                }
+            }
         }
-        
-        order.push(best);
-        cur = best;
     }
     
     return order;
 }
 
 function layoutSuperstring(reads: Reads, overlaps: Overlaps, minOverlap: number = 5): string[] {
-    let bestOrder: string[] | null = null;
+    // Find the shortest superstring by trying all permutations
+    const ids = Object.keys(reads);
+    let bestOrder: string[] = [];
     let bestLen = Infinity;
     
-    const perms = permutations(Object.keys(reads));
-    
-    for (const order of perms) {
-        let s = reads[order[0]];
-        let ok = true;
-        
-        for (let i = 0; i < order.length - 1; i++) {
-            const prev = order[i];
-            const nxt = order[i + 1];
-            const ov = overlaps[`${prev},${nxt}`] || overlaps[`${nxt},${prev}`] || 0;
+    // Try all permutations (for small datasets)
+    if (ids.length <= 8) {
+        const perms = permutations(ids);
+        for (const order of perms) {
+            let s = reads[order[0]];
+            let ok = true;
             
-            if (ov < minOverlap) {
-                ok = false;
-                break;
+            for (let i = 1; i < order.length; i++) {
+                const prev = reads[order[i - 1]];
+                const curr = reads[order[i]];
+                const ov = overlaps[`${order[i - 1]},${order[i]}`] || overlaps[`${order[i]},${order[i - 1]}`] || 0;
+                
+                if (ov < minOverlap) {
+                    ok = false;
+                    break;
+                }
+                
+                s += curr.substring(ov);
             }
-            s += reads[nxt].substring(ov);
-        }
-        
-        if (ok && s.length < bestLen) {
-            bestLen = s.length;
-            bestOrder = order;
+            
+            if (ok && s.length < bestLen) {
+                bestLen = s.length;
+                bestOrder = order;
+            }
         }
     }
     
@@ -505,4 +537,4 @@ export {
     consensusMajority,
     consensusPoa,
     runOlc
-};
+}; 
