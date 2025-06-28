@@ -215,7 +215,7 @@ const Controlled3DAssembly: React.FC = () => {
 
       console.log('OLC params:', { overlapParams, layoutParams, consensusParams })
 
-      import('../lib/OLC.ts').then(({ runOlc }) => {
+      import('@src/lib/OLC.ts').then(({ runOlc }) => {
         try {
           const result = runOlc(
             readsList,
@@ -292,7 +292,7 @@ const Controlled3DAssembly: React.FC = () => {
       
       console.log('deBruijn params:', { debruijnParams, layoutParams })
 
-      import('../lib/dbg').then(({ runDebruijn }) => {
+      import('@src/lib/dbg.ts').then(({ runDebruijn }) => {
         try {          
           // Track timing for deBruijn assembly
           const result = runDebruijn(
