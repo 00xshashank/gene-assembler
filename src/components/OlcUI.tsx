@@ -215,7 +215,7 @@ const Controlled3DAssembly: React.FC = () => {
 
       console.log('OLC params:', { overlapParams, layoutParams, consensusParams })
 
-      import('../lib/OLC').then(({ runOlc }) => {
+      import('../lib/OLC.ts').then(({ runOlc }) => {
         try {
           const result = runOlc(
             readsList,
