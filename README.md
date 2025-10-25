@@ -164,3 +164,5 @@ gene-assembly/
 - **Styling**: Tailwind CSS
 - **Build Tool**: Vite
 - **Development**: ESLint, TypeScript compiler
+
+## test commit by rushil(25/10/2025)
